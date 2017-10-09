@@ -1,3 +1,6 @@
+# v0.2.2
+
+* throttled call to refresh method.
 
 # v0.2.1
 
