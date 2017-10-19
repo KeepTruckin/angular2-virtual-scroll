@@ -5,3 +5,4 @@ node_modules/
 *.js
 /src/**/*.js
 angular2-virtual-scroll-*.tgz
+.idea

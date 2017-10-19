@@ -1,16 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var core_1 = require("@angular/core");
-var $ = require("jquery");
-var throttle = require('lodash.throttle');
-var SCROLL_INTO_ANIM_DURATION = 400;
+var tween = require("@tweenjs/tween.js");
 var VirtualScrollComponent = (function () {
-    function VirtualScrollComponent(element) {
+    function VirtualScrollComponent(element, renderer, zone) {
         var _this = this;
         this.element = element;
+        this.renderer = renderer;
+        this.zone = zone;
         this.items = [];
         this.bufferAmount = 0;
-        this.throttleTime = 170;
+        this.scrollAnimationTime = 1500;
         this.refreshHandler = function () {
             _this.refresh();
         };
@@ -19,8 +19,10 @@ var VirtualScrollComponent = (function () {
         this.start = new core_1.EventEmitter();
         this.end = new core_1.EventEmitter();
         this.startupLoop = true;
-        this.refreshThrottled = null;
-        this.refreshThrottled = throttle(this.refresh, this.throttleTime, { trailing: true });
+        /** Cache of the last scroll height to prevent setting CSS when not needed. */
+        this.lastScrollHeight = -1;
+        /** Cache of the last top padding to prevent setting CSS when not needed. */
+        this.lastTopPadding = -1;
     }
     Object.defineProperty(VirtualScrollComponent.prototype, "parentScroll", {
         get: function () {
@@ -30,22 +32,21 @@ var VirtualScrollComponent = (function () {
             if (this._parentScroll === element) {
                 return;
             }
-            this.removeParentEventHandlers(this._parentScroll);
             this._parentScroll = element;
             this.addParentEventHandlers(this._parentScroll);
         },
         enumerable: true,
         configurable: true
     });
-    VirtualScrollComponent.prototype.onScroll = function () {
-        this.refreshThrottled();
-    };
     VirtualScrollComponent.prototype.ngOnInit = function () {
         this.scrollbarWidth = 0; // this.element.nativeElement.offsetWidth - this.element.nativeElement.clientWidth;
         this.scrollbarHeight = 0; // this.element.nativeElement.offsetHeight - this.element.nativeElement.clientHeight;
+        if (!this.parentScroll) {
+            this.addParentEventHandlers(this.element.nativeElement);
+        }
     };
     VirtualScrollComponent.prototype.ngOnDestroy = function () {
-        this.removeParentEventHandlers(this.parentScroll);
+        this.removeParentEventHandlers();
     };
     VirtualScrollComponent.prototype.ngOnChanges = function (changes) {
         this.previousStart = undefined;
@@ -56,76 +57,76 @@ var VirtualScrollComponent = (function () {
         }
         this.refresh();
     };
-    VirtualScrollComponent.prototype.refresh = function (callback) {
+    VirtualScrollComponent.prototype.refresh = function () {
         var _this = this;
-        if (callback === void 0) { callback = undefined; }
-        requestAnimationFrame(function () {
-            _this.calculateItems();
-            if (callback) {
-                callback();
-            }
+        this.zone.runOutsideAngular(function () {
+            requestAnimationFrame(function () { return _this.calculateItems(); });
         });
     };
-    VirtualScrollComponent.prototype.scrollInto = function (item, scrollEndCallback, doRefresh) {
+    VirtualScrollComponent.prototype.scrollInto = function (item) {
         var _this = this;
-        if (scrollEndCallback === void 0) { scrollEndCallback = undefined; }
-        if (doRefresh === void 0) { doRefresh = true; }
         var el = this.parentScroll instanceof Window ? document.body : this.parentScroll || this.element.nativeElement;
-        var $el = $(el);
+        var offsetTop = this.getElementsOffset();
         var index = (this.items || []).indexOf(item);
         if (index < 0 || index >= (this.items || []).length)
             return;
         var d = this.calculateDimensions();
-        if (index >= this.previousStart && index <= this.previousEnd) {
-            //can accurately scroll to a rendered item using its offsetTop
-            var itemElem = document.getElementById(item.id);
-            if (doRefresh) {
-                var scrollTop = this.topPadding + itemElem.offsetTop;
-                $el.animate({ scrollTop: scrollTop }, SCROLL_INTO_ANIM_DURATION, function () {
-                    _this.scrollInto(item, scrollEndCallback, false);
+        var scrollTop = (Math.floor(index / d.itemsPerRow) * d.childHeight)
+            - (d.childHeight * Math.min(index, this.bufferAmount));
+        if (this.currentTween != undefined)
+            this.currentTween.stop();
+        this.currentTween = new tween.Tween({ scrollTop: el.scrollTop })
+            .to({ scrollTop: scrollTop }, this.scrollAnimationTime)
+            .easing(tween.Easing.Quadratic.Out)
+            .onUpdate(function (data) {
+            _this.renderer.setProperty(el, 'scrollTop', data.scrollTop);
+            _this.refresh();
+        })
+            .start();
+        var animate = function (time) {
+            _this.currentTween.update(time);
+            if (_this.currentTween._object.scrollTop !== scrollTop) {
+                _this.zone.runOutsideAngular(function () {
+                    requestAnimationFrame(animate);
                 });
             }
-            else {
-                $el.scrollTop(this.topPadding + itemElem.offsetTop);
-                if (scrollEndCallback) {
-                    setTimeout(scrollEndCallback, 0);
+        };
+        animate();
+    };
+    VirtualScrollComponent.prototype.addParentEventHandlers = function (parentScroll) {
+        var _this = this;
+        this.removeParentEventHandlers();
+        if (parentScroll) {
+            this.zone.runOutsideAngular(function () {
+                _this.disposeScrollHandler =
+                    _this.renderer.listen(parentScroll, 'scroll', _this.refreshHandler);
+                if (parentScroll instanceof Window) {
+                    _this.disposeScrollHandler =
+                        _this.renderer.listen('window', 'resize', _this.refreshHandler);
                 }
-            }
-        }
-        else {
-            var scrollTop = (Math.floor(index / d.itemsPerRow) * d.childHeight);
-            //- (d.childHeight * Math.min(index, this.bufferAmount));
-            $el.animate({ scrollTop: scrollTop }, SCROLL_INTO_ANIM_DURATION, function () {
-                _this.scrollInto(item, scrollEndCallback, false);
             });
         }
     };
-    VirtualScrollComponent.prototype.addParentEventHandlers = function (parentScroll) {
-        if (parentScroll) {
-            parentScroll.addEventListener('scroll', this.refreshHandler);
-            if (parentScroll instanceof Window) {
-                parentScroll.addEventListener('resize', this.refreshHandler);
-            }
+    VirtualScrollComponent.prototype.removeParentEventHandlers = function () {
+        if (this.disposeScrollHandler) {
+            this.disposeScrollHandler();
+            this.disposeScrollHandler = undefined;
         }
-    };
-    VirtualScrollComponent.prototype.removeParentEventHandlers = function (parentScroll) {
-        if (parentScroll) {
-            parentScroll.removeEventListener('scroll', this.refreshHandler);
-            if (parentScroll instanceof Window) {
-                parentScroll.removeEventListener('resize', this.refreshHandler);
-            }
+        if (this.disposeResizeHandler) {
+            this.disposeResizeHandler();
+            this.disposeResizeHandler = undefined;
         }
     };
     VirtualScrollComponent.prototype.countItemsPerRow = function () {
-        return 1;
-        /*let offsetTop;
-        let itemsPerRow;
-        let children = this.contentElementRef.nativeElement.children;
+        var offsetTop;
+        var itemsPerRow;
+        var children = this.contentElementRef.nativeElement.children;
         for (itemsPerRow = 0; itemsPerRow < children.length; itemsPerRow++) {
-          if (offsetTop != undefined && offsetTop !== children[itemsPerRow].offsetTop) break;
-          offsetTop = children[itemsPerRow].offsetTop;
+            if (offsetTop != undefined && offsetTop !== children[itemsPerRow].offsetTop)
+                break;
+            offsetTop = children[itemsPerRow].offsetTop;
         }
-        return itemsPerRow;*/
+        return itemsPerRow;
     };
     VirtualScrollComponent.prototype.getElementsOffset = function () {
         var offsetTop = 0;
@@ -159,9 +160,17 @@ var VirtualScrollComponent = (function () {
         var itemsPerRow = Math.max(1, this.countItemsPerRow());
         var itemsPerRowByCalc = Math.max(1, Math.floor(viewWidth / childWidth));
         var itemsPerCol = Math.max(1, Math.floor(viewHeight / childHeight));
-        var scrollTop = Math.max(0, el.scrollTop);
-        if (itemsPerCol === 1 && Math.floor(scrollTop / this.scrollHeight * itemCount) + itemsPerRowByCalc >= itemCount) {
+        var elScrollTop = this.parentScroll instanceof Window
+            ? (window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0)
+            : el.scrollTop;
+        var scrollTop = Math.max(0, elScrollTop);
+        var scrollHeight = childHeight * itemCount / itemsPerRow;
+        if (itemsPerCol === 1 && Math.floor(scrollTop / scrollHeight * itemCount) + itemsPerRowByCalc >= itemCount) {
             itemsPerRow = itemsPerRowByCalc;
+        }
+        if (scrollHeight !== this.lastScrollHeight) {
+            this.renderer.setStyle(this.shimElementRef.nativeElement, 'height', scrollHeight + "px");
+            this.lastScrollHeight = scrollHeight;
         }
         return {
             itemCount: itemCount,
@@ -171,31 +180,25 @@ var VirtualScrollComponent = (function () {
             childHeight: childHeight,
             itemsPerRow: itemsPerRow,
             itemsPerCol: itemsPerCol,
-            itemsPerRowByCalc: itemsPerRowByCalc
+            itemsPerRowByCalc: itemsPerRowByCalc,
+            scrollHeight: scrollHeight,
         };
     };
     VirtualScrollComponent.prototype.calculateItems = function () {
+        var _this = this;
+        core_1.NgZone.assertNotInAngularZone();
         var el = this.parentScroll instanceof Window ? document.body : this.parentScroll || this.element.nativeElement;
         var d = this.calculateDimensions();
-        // Optimization: do not update start and end indexes until scroll reaches the end of list
-        if (this.previousStart !== undefined && this.previousEnd !== undefined) {
-            var A = el.scrollTop;
-            var B = this.topPadding;
-            var C = this.topPadding + ((this.previousEnd - this.previousStart) * d.childHeight);
-            var D = el.scrollTop + d.viewHeight;
-            var H = d.childHeight * 1;
-            if (A - B > H && C - D > H) {
-                return;
-            }
-        }
         var items = this.items || [];
         var offsetTop = this.getElementsOffset();
-        this.scrollHeight = d.childHeight * d.itemCount / d.itemsPerRow;
-        if (el.scrollTop > this.scrollHeight) {
-            el.scrollTop = this.scrollHeight + offsetTop;
+        var elScrollTop = this.parentScroll instanceof Window
+            ? (window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0)
+            : el.scrollTop;
+        if (elScrollTop > d.scrollHeight) {
+            elScrollTop = d.scrollHeight + offsetTop;
         }
-        var scrollTop = Math.max(0, el.scrollTop - offsetTop);
-        var indexByScrollTop = scrollTop / this.scrollHeight * d.itemCount / d.itemsPerRow;
+        var scrollTop = Math.max(0, elScrollTop - offsetTop);
+        var indexByScrollTop = scrollTop / d.scrollHeight * d.itemCount / d.itemsPerRow;
         var end = Math.min(d.itemCount, Math.ceil(indexByScrollTop) * d.itemsPerRow + d.itemsPerRow * (d.itemsPerCol + 1));
         var maxStartEnd = end;
         var modEnd = end % d.itemsPerRow;
@@ -204,8 +207,12 @@ var VirtualScrollComponent = (function () {
         }
         var maxStart = Math.max(0, maxStartEnd - d.itemsPerCol * d.itemsPerRow - d.itemsPerRow);
         var start = Math.min(maxStart, Math.floor(indexByScrollTop) * d.itemsPerRow);
-        this.topPadding = d.childHeight * Math.ceil(start / d.itemsPerRow) - (d.childHeight * Math.min(start, this.bufferAmount));
-        ;
+        var topPadding = (items == null || items.length === 0) ? 0 : (d.childHeight * Math.ceil(start / d.itemsPerRow) - (d.childHeight * Math.min(start, this.bufferAmount)));
+        if (topPadding !== this.lastTopPadding) {
+            this.renderer.setStyle(this.contentElementRef.nativeElement, 'transform', "translateY(" + topPadding + "px)");
+            this.renderer.setStyle(this.contentElementRef.nativeElement, 'webkitTransform', "translateY(" + topPadding + "px)");
+            this.lastTopPadding = topPadding;
+        }
         start = !isNaN(start) ? start : -1;
         end = !isNaN(end) ? end : -1;
         start -= this.bufferAmount;
@@ -213,43 +220,38 @@ var VirtualScrollComponent = (function () {
         end += this.bufferAmount;
         end = Math.min(items.length, end);
         if (start !== this.previousStart || end !== this.previousEnd) {
-            // update the scroll list
-            this.update.emit(items.slice(start, end));
-            // emit 'start' event
-            if (start !== this.previousStart && this.startupLoop === false) {
-                this.start.emit({ start: start, end: end });
-            }
-            // emit 'end' event
-            if (end !== this.previousEnd && this.startupLoop === false) {
-                this.end.emit({ start: start, end: end });
-            }
-            this.previousStart = start;
-            this.previousEnd = end;
-            if (this.startupLoop === true) {
-                this.refresh();
-            }
-            else {
-                this.change.emit({ start: start, end: end });
-            }
+            this.zone.run(function () {
+                // update the scroll list
+                _this.viewPortItems = items.slice(start, end);
+                _this.update.emit(_this.viewPortItems);
+                // emit 'start' event
+                if (start !== _this.previousStart && _this.startupLoop === false) {
+                    _this.start.emit({ start: start, end: end });
+                }
+                // emit 'end' event
+                if (end !== _this.previousEnd && _this.startupLoop === false) {
+                    _this.end.emit({ start: start, end: end });
+                }
+                _this.previousStart = start;
+                _this.previousEnd = end;
+                if (_this.startupLoop === true) {
+                    _this.refresh();
+                }
+                else {
+                    _this.change.emit({ start: start, end: end });
+                }
+            });
         }
         else if (this.startupLoop === true) {
             this.startupLoop = false;
             this.refresh();
-        }
-        if (end === items.length) {
-            var contentHeight = this.contentElementRef.nativeElement.offsetHeight;
-            var delta = contentHeight - (d.childHeight * (end - start));
-            //console.log('jkdelta', this.topPadding, contentHeight, this.scrollHeight + delta, this.scrollHeight, delta);
-            if (delta !== 0) {
-                this.scrollHeight += delta;
-            }
         }
     };
     VirtualScrollComponent.decorators = [
         { type: core_1.Component, args: [{
                     selector: 'virtual-scroll,[virtualScroll]',
                     exportAs: 'virtualScroll',
-                    template: "\n    <div class=\"total-padding\" [style.height]=\"scrollHeight + 'px'\"></div>\n    <div class=\"scrollable-content\" #content [style.transform]=\"'translateY(' + topPadding + 'px)'\"\n     [style.webkitTransform]=\"'translateY(' + topPadding + 'px)'\">\n      <ng-content></ng-content>\n    </div>\n  ",
+                    template: "\n    <div class=\"total-padding\" #shim></div>\n    <div class=\"scrollable-content\" #content>\n      <ng-content></ng-content>\n    </div>\n  ",
                     host: {
                         '[style.overflow-y]': "parentScroll ? 'hidden' : 'auto'"
                     },
@@ -259,6 +261,8 @@ var VirtualScrollComponent = (function () {
     /** @nocollapse */
     VirtualScrollComponent.ctorParameters = function () { return [
         { type: core_1.ElementRef, },
+        { type: core_1.Renderer2, },
+        { type: core_1.NgZone, },
     ]; };
     VirtualScrollComponent.propDecorators = {
         'items': [{ type: core_1.Input },],
@@ -267,15 +271,15 @@ var VirtualScrollComponent = (function () {
         'childWidth': [{ type: core_1.Input },],
         'childHeight': [{ type: core_1.Input },],
         'bufferAmount': [{ type: core_1.Input },],
-        'throttleTime': [{ type: core_1.Input },],
+        'scrollAnimationTime': [{ type: core_1.Input },],
         'parentScroll': [{ type: core_1.Input },],
         'update': [{ type: core_1.Output },],
         'change': [{ type: core_1.Output },],
         'start': [{ type: core_1.Output },],
         'end': [{ type: core_1.Output },],
         'contentElementRef': [{ type: core_1.ViewChild, args: ['content', { read: core_1.ElementRef },] },],
+        'shimElementRef': [{ type: core_1.ViewChild, args: ['shim', { read: core_1.ElementRef },] },],
         'containerElementRef': [{ type: core_1.ContentChild, args: ['container',] },],
-        'onScroll': [{ type: core_1.HostListener, args: ['scroll',] },],
     };
     return VirtualScrollComponent;
 }());
