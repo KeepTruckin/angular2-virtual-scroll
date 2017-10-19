@@ -1,8 +1,25 @@
 
-# v0.2.1
+# v0.3.2
 
 * using actual height of scrollable-content in scrollHeight calculation to fix clipping of last item in case of variable height items
 * in scrollInto(), if the item is rendered, scroll to it accurately using its offsetTop
+
+# v0.3.1
+
+* Merge PR [!117](https://github.com/rintoj/angular2-virtual-scroll/pull/117) - Run scroll and frame handlers outside of angular zone for performance
+
+# v0.3.0
+
+* Add smooth scroll for `scrollInto` function.
+
+# v0.2.2
+
+* Fixes #94
+
+# v0.2.1
+
+* Added ability to get viewPortItems as a field instead of event
+* Added easier ability of using window scrollbar
 
 # v0.2.0
 

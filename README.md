@@ -36,6 +36,17 @@ This method is effective because the number of DOM elements are always constant 
 alternatively
 
 ```html
+<virtual-scroll #scroll [items]="items">
+
+    <list-item *ngFor="let item of scroll.viewPortItems" [item]="item">
+    </list-item>
+
+</virtual-scroll>
+```
+
+alternatively
+
+```html
 <div virtualScroll [items]="items" (update)="viewPortItems = $event">
 
     <list-item *ngFor="let item of viewPortItems" [item]="item">
@@ -80,6 +91,23 @@ export class AppModule { }
     </list-item>
 
 </virtual-scroll>
+```
+
+You must also define width and height for the container and for it's children.
+
+```css
+virtual-scroll {
+  display: block;
+  width: 350px;
+  height: 200px;
+}
+
+list-item {
+  display: block;
+  width: 100%;
+  height: 30px;
+}
+
 ```
 
 **Step 4:** Create 'list-item' component.
@@ -136,9 +164,24 @@ Child component is not a necessity if your item is simple enough. See below.
 | childWidth     | number | The minimum width of the item template's cell. This dimension is used to help determine how many cells should be created when initialized, and to help calculate the height of the scrollable area. Note that the actual rendered size of the first cell is used by default if not specified.
 | childHeight    | number | The minimum height of the item template's cell. This dimension is used to help determine how many cells should be created when initialized, and to help calculate the height of the scrollable area. Note that the actual rendered size of the first cell is used by default if not specified.
 | bufferAmount   | number | The the number of elements to be rendered outside of the current container's viewport. Useful when not all elements are the same dimensions.
+| scrollAnimationTime | number | The time in milliseconds for the scroll animation to run for. Default value is 1500
 | parentScroll   | Element / Window | Element (or window), which will have scrollbar. This element must be one of the parents of virtual-scroll
 | update         | Event  | This event is fired every time `start` or `end` index change and emits list of items from `start` to `end`. The list emitted by this event must be used with `*ngFor` to render the actual list of items within `<virtual-scroll>`
 | change         | Event  | This event is fired every time `start` or `end` index change and emits `ChangeEvent` which of format: `{ start: number, end: number }`
+
+## Getting view port items without events
+
+If you are using AOT compilation (hope you do it) then in classic usage (with listening to `update` event) it is required to create field `viewPortItems` in your component.
+There is a way how to avoid it.
+
+```html
+<virtual-scroll #scroll [items]="items">
+
+    <list-item *ngFor="let item of scroll.viewPortItems" [item]="item">
+    </list-item>
+
+</virtual-scroll>
+```
 
 ## Additional elements in scroll
 
@@ -178,23 +221,16 @@ If you want to use scrollbar of parent block, instead of scrolling block, set `p
 If you want to use scrollbar of window, instead of scrolling block, set `parentScroll`.
 
 ```html
-<virtual-scroll [items]="items"
-    [parentScroll]="window"
-    (update)="viewPortItems = $event">
+<virtual-scroll
+    #scroll
+    [items]="items"
+    [parentScroll]="scroll.window">
     <input type="search">
     <div #container>
-        <list-item *ngFor="let item of viewPortItems" [item]="item">
+        <list-item *ngFor="let item of scroll.viewPortItems" [item]="item">
         </list-item>
     </div>
 </virtual-scroll>
-```
-
-```ts
-...
-export class MyComponent {
-...
-window: window;
-...
 ```
 
 ## Items with variable size
