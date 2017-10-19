@@ -1,7 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var core_1 = require("@angular/core");
+//import * as $ from 'jquery';
 var tween = require("@tweenjs/tween.js");
+//const SCROLL_INTO_ANIM_DURATION = 400;
 var VirtualScrollComponent = (function () {
     function VirtualScrollComponent(element, renderer, zone) {
         var _this = this;
@@ -57,20 +59,50 @@ var VirtualScrollComponent = (function () {
         }
         this.refresh();
     };
-    VirtualScrollComponent.prototype.refresh = function () {
+    VirtualScrollComponent.prototype.refresh = function (callback) {
         var _this = this;
+        if (callback === void 0) { callback = undefined; }
         this.zone.runOutsideAngular(function () {
-            requestAnimationFrame(function () { return _this.calculateItems(); });
+            requestAnimationFrame(function () {
+                _this.calculateItems();
+                if (callback) {
+                    callback();
+                }
+            });
         });
     };
-    VirtualScrollComponent.prototype.scrollInto = function (item) {
+    VirtualScrollComponent.prototype.scrollInto = function (item, scrollEndCallback, doRefresh) {
         var _this = this;
+        if (scrollEndCallback === void 0) { scrollEndCallback = undefined; }
+        if (doRefresh === void 0) { doRefresh = true; }
         var el = this.parentScroll instanceof Window ? document.body : this.parentScroll || this.element.nativeElement;
-        var offsetTop = this.getElementsOffset();
+        //let $el = $(el);
         var index = (this.items || []).indexOf(item);
         if (index < 0 || index >= (this.items || []).length)
             return;
         var d = this.calculateDimensions();
+        /*if (index >= this.previousStart && index <= this.previousEnd) {
+          //can accurately scroll to a rendered item using its offsetTop
+          var itemElem = document.getElementById(item.id);
+          if (doRefresh) {
+            let scrollTop = this.topPadding + itemElem.offsetTop;
+            $el.animate({ scrollTop: scrollTop }, SCROLL_INTO_ANIM_DURATION, () => {
+              this.scrollInto(item, scrollEndCallback, false);
+            });
+          }
+          else {
+            $el.scrollTop(this.topPadding + itemElem.offsetTop);
+            if (scrollEndCallback) {
+              setTimeout(scrollEndCallback, 0);
+            }
+          }
+        } else {
+          let scrollTop = (Math.floor(index / d.itemsPerRow) * d.childHeight)
+            //- (d.childHeight * Math.min(index, this.bufferAmount));
+          $el.animate({ scrollTop: scrollTop }, SCROLL_INTO_ANIM_DURATION, () => {
+            this.scrollInto(item, scrollEndCallback, false);
+          });
+        }*/
         var scrollTop = (Math.floor(index / d.itemsPerRow) * d.childHeight)
             - (d.childHeight * Math.min(index, this.bufferAmount));
         if (this.currentTween != undefined)
@@ -118,15 +150,15 @@ var VirtualScrollComponent = (function () {
         }
     };
     VirtualScrollComponent.prototype.countItemsPerRow = function () {
-        var offsetTop;
-        var itemsPerRow;
-        var children = this.contentElementRef.nativeElement.children;
+        return 1;
+        /*let offsetTop;
+        let itemsPerRow;
+        let children = this.contentElementRef.nativeElement.children;
         for (itemsPerRow = 0; itemsPerRow < children.length; itemsPerRow++) {
-            if (offsetTop != undefined && offsetTop !== children[itemsPerRow].offsetTop)
-                break;
-            offsetTop = children[itemsPerRow].offsetTop;
+          if (offsetTop != undefined && offsetTop !== children[itemsPerRow].offsetTop) break;
+          offsetTop = children[itemsPerRow].offsetTop;
         }
-        return itemsPerRow;
+        return itemsPerRow;*/
     };
     VirtualScrollComponent.prototype.getElementsOffset = function () {
         var offsetTop = 0;
@@ -189,6 +221,17 @@ var VirtualScrollComponent = (function () {
         core_1.NgZone.assertNotInAngularZone();
         var el = this.parentScroll instanceof Window ? document.body : this.parentScroll || this.element.nativeElement;
         var d = this.calculateDimensions();
+        // Optimization: do not update start and end indexes until scroll reaches the end of list
+        /*if (this.previousStart !== undefined && this.previousEnd !== undefined) {
+          let A = el.scrollTop;
+          let B = this.topPadding;
+          let C = this.topPadding + ((this.previousEnd - this.previousStart) * d.childHeight);
+          let D = el.scrollTop + d.viewHeight;
+          let H = d.childHeight * 1;
+          if (A - B > H && C - D > H) {
+            return;
+          }
+        }*/
         var items = this.items || [];
         var offsetTop = this.getElementsOffset();
         var elScrollTop = this.parentScroll instanceof Window
@@ -246,6 +289,14 @@ var VirtualScrollComponent = (function () {
             this.startupLoop = false;
             this.refresh();
         }
+        /*if (end === items.length) {
+          var contentHeight = this.contentElementRef.nativeElement.offsetHeight;
+          var delta = contentHeight - (d.childHeight * (end - start));
+          //console.log('jkdelta', this.topPadding, contentHeight, this.scrollHeight + delta, this.scrollHeight, delta);
+          if (delta !== 0) {
+            this.scrollHeight += delta;
+          }
+        }*/
     };
     VirtualScrollComponent.decorators = [
         { type: core_1.Component, args: [{
