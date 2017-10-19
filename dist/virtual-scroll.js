@@ -1,9 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var core_1 = require("@angular/core");
-//import * as $ from 'jquery';
-var tween = require("@tweenjs/tween.js");
-//const SCROLL_INTO_ANIM_DURATION = 400;
+var $ = require("jquery");
+var SCROLL_INTO_ANIM_DURATION = 400;
 var VirtualScrollComponent = (function () {
     function VirtualScrollComponent(element, renderer, zone) {
         var _this = this;
@@ -76,54 +75,57 @@ var VirtualScrollComponent = (function () {
         if (scrollEndCallback === void 0) { scrollEndCallback = undefined; }
         if (doRefresh === void 0) { doRefresh = true; }
         var el = this.parentScroll instanceof Window ? document.body : this.parentScroll || this.element.nativeElement;
-        //let $el = $(el);
+        var $el = $(el);
         var index = (this.items || []).indexOf(item);
         if (index < 0 || index >= (this.items || []).length)
             return;
         var d = this.calculateDimensions();
-        /*if (index >= this.previousStart && index <= this.previousEnd) {
-          //can accurately scroll to a rendered item using its offsetTop
-          var itemElem = document.getElementById(item.id);
-          if (doRefresh) {
-            let scrollTop = this.topPadding + itemElem.offsetTop;
-            $el.animate({ scrollTop: scrollTop }, SCROLL_INTO_ANIM_DURATION, () => {
-              this.scrollInto(item, scrollEndCallback, false);
-            });
-          }
-          else {
-            $el.scrollTop(this.topPadding + itemElem.offsetTop);
-            if (scrollEndCallback) {
-              setTimeout(scrollEndCallback, 0);
-            }
-          }
-        } else {
-          let scrollTop = (Math.floor(index / d.itemsPerRow) * d.childHeight)
-            //- (d.childHeight * Math.min(index, this.bufferAmount));
-          $el.animate({ scrollTop: scrollTop }, SCROLL_INTO_ANIM_DURATION, () => {
-            this.scrollInto(item, scrollEndCallback, false);
-          });
-        }*/
-        var scrollTop = (Math.floor(index / d.itemsPerRow) * d.childHeight)
-            - (d.childHeight * Math.min(index, this.bufferAmount));
-        if (this.currentTween != undefined)
-            this.currentTween.stop();
-        this.currentTween = new tween.Tween({ scrollTop: el.scrollTop })
-            .to({ scrollTop: scrollTop }, this.scrollAnimationTime)
-            .easing(tween.Easing.Quadratic.Out)
-            .onUpdate(function (data) {
-            _this.renderer.setProperty(el, 'scrollTop', data.scrollTop);
-            _this.refresh();
-        })
-            .start();
-        var animate = function (time) {
-            _this.currentTween.update(time);
-            if (_this.currentTween._object.scrollTop !== scrollTop) {
-                _this.zone.runOutsideAngular(function () {
-                    requestAnimationFrame(animate);
+        if (index >= this.previousStart && index <= this.previousEnd) {
+            //can accurately scroll to a rendered item using its offsetTop
+            var itemElem = document.getElementById(item.id);
+            if (doRefresh) {
+                var scrollTop = this.lastTopPadding + itemElem.offsetTop;
+                $el.animate({ scrollTop: scrollTop }, SCROLL_INTO_ANIM_DURATION, function () {
+                    _this.scrollInto(item, scrollEndCallback, false);
                 });
             }
+            else {
+                $el.scrollTop(this.lastTopPadding + itemElem.offsetTop);
+                if (scrollEndCallback) {
+                    setTimeout(scrollEndCallback, 0);
+                }
+            }
+        }
+        else {
+            var scrollTop = (Math.floor(index / d.itemsPerRow) * d.childHeight);
+            //- (d.childHeight * Math.min(index, this.bufferAmount));
+            $el.animate({ scrollTop: scrollTop }, SCROLL_INTO_ANIM_DURATION, function () {
+                _this.scrollInto(item, scrollEndCallback, false);
+            });
+        }
+        /*let scrollTop = (Math.floor(index / d.itemsPerRow) * d.childHeight)
+          - (d.childHeight * Math.min(index, this.bufferAmount));
+    
+        if (this.currentTween != undefined) this.currentTween.stop()
+        this.currentTween = new tween.Tween({ scrollTop: el.scrollTop })
+          .to({ scrollTop }, this.scrollAnimationTime)
+          .easing(tween.Easing.Quadratic.Out)
+          .onUpdate((data) => {
+            this.renderer.setProperty(el, 'scrollTop', data.scrollTop);
+            this.refresh();
+          })
+          .start();
+    
+        const animate = (time?) => {
+          this.currentTween.update(time);
+          if (this.currentTween._object.scrollTop !== scrollTop) {
+            this.zone.runOutsideAngular(() => {
+              requestAnimationFrame(animate);
+            });
+          }
         };
-        animate();
+    
+        animate();*/
     };
     VirtualScrollComponent.prototype.addParentEventHandlers = function (parentScroll) {
         var _this = this;
@@ -221,17 +223,6 @@ var VirtualScrollComponent = (function () {
         core_1.NgZone.assertNotInAngularZone();
         var el = this.parentScroll instanceof Window ? document.body : this.parentScroll || this.element.nativeElement;
         var d = this.calculateDimensions();
-        // Optimization: do not update start and end indexes until scroll reaches the end of list
-        /*if (this.previousStart !== undefined && this.previousEnd !== undefined) {
-          let A = el.scrollTop;
-          let B = this.topPadding;
-          let C = this.topPadding + ((this.previousEnd - this.previousStart) * d.childHeight);
-          let D = el.scrollTop + d.viewHeight;
-          let H = d.childHeight * 1;
-          if (A - B > H && C - D > H) {
-            return;
-          }
-        }*/
         var items = this.items || [];
         var offsetTop = this.getElementsOffset();
         var elScrollTop = this.parentScroll instanceof Window
@@ -241,6 +232,17 @@ var VirtualScrollComponent = (function () {
             elScrollTop = d.scrollHeight + offsetTop;
         }
         var scrollTop = Math.max(0, elScrollTop - offsetTop);
+        // Optimization: do not update start and end indexes until scroll reaches the end of list
+        if (this.previousStart !== undefined && this.previousEnd !== undefined) {
+            var A = scrollTop;
+            var B = this.lastTopPadding;
+            var C = this.lastTopPadding + ((this.previousEnd - this.previousStart) * d.childHeight);
+            var D = scrollTop + d.viewHeight;
+            var H = d.childHeight * 1;
+            if (A - B > H && C - D > H) {
+                return;
+            }
+        }
         var indexByScrollTop = scrollTop / d.scrollHeight * d.itemCount / d.itemsPerRow;
         var end = Math.min(d.itemCount, Math.ceil(indexByScrollTop) * d.itemsPerRow + d.itemsPerRow * (d.itemsPerCol + 1));
         var maxStartEnd = end;
@@ -289,14 +291,15 @@ var VirtualScrollComponent = (function () {
             this.startupLoop = false;
             this.refresh();
         }
-        /*if (end === items.length) {
-          var contentHeight = this.contentElementRef.nativeElement.offsetHeight;
-          var delta = contentHeight - (d.childHeight * (end - start));
-          //console.log('jkdelta', this.topPadding, contentHeight, this.scrollHeight + delta, this.scrollHeight, delta);
-          if (delta !== 0) {
-            this.scrollHeight += delta;
-          }
-        }*/
+        if (end === items.length) {
+            var contentHeight = this.contentElementRef.nativeElement.offsetHeight;
+            var delta = contentHeight - (d.childHeight * (end - start));
+            //console.log('jkdelta', this.topPadding, contentHeight, this.scrollHeight + delta, this.scrollHeight, delta);
+            if (delta !== 0) {
+                this.renderer.setStyle(this.shimElementRef.nativeElement, 'height', this.lastScrollHeight + delta + "px");
+                this.lastScrollHeight += delta;
+            }
+        }
     };
     VirtualScrollComponent.decorators = [
         { type: core_1.Component, args: [{
