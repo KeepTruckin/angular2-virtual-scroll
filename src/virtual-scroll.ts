@@ -3,7 +3,6 @@ import {
   ContentChild,
   ElementRef,
   EventEmitter,
-  HostListener,
   Input,
   NgModule,
   NgZone,
@@ -17,7 +16,7 @@ import {
 } from '@angular/core';
 
 import * as $ from 'jquery';
-import * as tween from '@tweenjs/tween.js'
+//import * as tween from '@tweenjs/tween.js'
 
 export interface ChangeEvent {
   start?: number;
@@ -346,16 +345,16 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
     let scrollTop = Math.max(0, elScrollTop - offsetTop);
 
     // Optimization: do not update start and end indexes until scroll reaches the end of list
-    if (this.previousStart !== undefined && this.previousEnd !== undefined) {
-      let A = scrollTop;
-      let B = this.lastTopPadding;
-      let C = this.lastTopPadding + ((this.previousEnd - this.previousStart) * d.childHeight);
-      let D = scrollTop + d.viewHeight;
-      let H = d.childHeight * 1;
-      if (A - B > H && C - D > H) {
-        return;
-      }
-    }
+    // if (this.previousStart !== undefined && this.previousEnd !== undefined) {
+    //   let A = scrollTop;
+    //   let B = this.lastTopPadding;
+    //   let C = this.lastTopPadding + ((this.previousEnd - this.previousStart) * d.childHeight);
+    //   let D = scrollTop + d.viewHeight;
+    //   let H = d.childHeight * 1;
+    //   if (A - B > H && C - D > H) {
+    //     return;
+    //   }
+    // }
 
     let indexByScrollTop = scrollTop / d.scrollHeight * d.itemCount / d.itemsPerRow;
     let end = Math.min(d.itemCount, Math.ceil(indexByScrollTop) * d.itemsPerRow + d.itemsPerRow * (d.itemsPerCol + 1));
