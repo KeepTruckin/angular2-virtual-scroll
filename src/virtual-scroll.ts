@@ -42,9 +42,10 @@ const SCROLL_INTO_ANIM_DURATION = 400;
     :host {
       overflow: hidden;
       position: relative;
-	  display: block;
+      display: block;
       -webkit-overflow-scrolling: touch;
     }
+
     .scrollable-content {
       top: 0;
       left: 0;
@@ -52,6 +53,7 @@ const SCROLL_INTO_ANIM_DURATION = 400;
       height: 100%;
       position: absolute;
     }
+
     .total-padding {
       width: 1px;
       opacity: 0;
@@ -79,7 +81,7 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
   bufferAmount: number = 0;
 
   @Input()
-  scrollAnimationTime: number = 1500;
+  scrollAnimationTime: number = 300;
 
   private refreshHandler = () => {
     this.refresh();
@@ -111,19 +113,24 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
   @Output()
   end: EventEmitter<ChangeEvent> = new EventEmitter<ChangeEvent>();
 
-  @ViewChild('content', { read: ElementRef })
+  @ViewChild('content', {read: ElementRef})
   contentElementRef: ElementRef;
 
-  @ViewChild('shim', { read: ElementRef })
+  @ViewChild('shim', {read: ElementRef})
   shimElementRef: ElementRef;
 
   @ContentChild('container')
   containerElementRef: ElementRef;
 
-  previousStart: number;
-  previousEnd: number;
+  topPadding: number = 0;
+  previousStart: number = 0;
+  previousEnd: number = -1;
+  previousChildHeight: number = 0;
+  previousScrollNumberElements: number = 0;
   startupLoop: boolean = true;
-  currentTween: any;
+  currentTween: tween.Tween;
+  itemsHeight: { [key: number]: number } = {};
+  window = window;
 
   private disposeScrollHandler: () => void | undefined;
   private disposeResizeHandler: () => void | undefined;
@@ -134,10 +141,15 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
   /** Cache of the last top padding to prevent setting CSS when not needed. */
   private lastTopPadding = -1;
 
-  constructor(
-    private readonly element: ElementRef,
-    private readonly renderer: Renderer2,
-    private readonly zone: NgZone) { }
+  constructor(private readonly element: ElementRef,
+        private readonly renderer: Renderer2,
+        private readonly zone: NgZone) {
+  }
+
+  @HostListener('window:resize')
+  onResize() {
+    this.refresh();
+  }
 
   ngOnInit() {
     this.scrollbarWidth = 0; // this.element.nativeElement.offsetWidth - this.element.nativeElement.clientWidth;
@@ -153,8 +165,8 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    this.previousStart = undefined;
-    this.previousEnd = undefined;
+    this.previousStart = 0;
+    this.previousEnd = -1;
     const items = (changes as any).items || {};
     if ((changes as any).items != undefined && items.previousValue == undefined || (items.previousValue != undefined && items.previousValue.length === 0)) {
       this.startupLoop = true;
@@ -173,9 +185,10 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
     });
   }
 
-  scrollInto(item: any, scrollEndCallback: Function = undefined, doRefresh: boolean = true) {
-    let el: Element = this.parentScroll instanceof Window ? document.body : this.parentScroll || this.element.nativeElement;
+  scrollInto(item: any, scrollEndCallback: Function = undefined, doRefresh: boolean = true, additionalOffset?: number) {
+    let el: Element = this.getElement();
     let $el = $(el);
+    let offsetTop = this.getElementsOffset();
     let index: number = (this.items || []).indexOf(item);
     if (index < 0 || index >= (this.items || []).length) return;
 
@@ -205,11 +218,13 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
     }*/
 
     let scrollTop = (Math.floor(index / d.itemsPerRow) * d.childHeight)
-      - (d.childHeight * Math.min(index, this.bufferAmount));
+      - (d.childHeight * Math.min(index, this.bufferAmount)) + offsetTop + (additionalOffset ? additionalOffset : 0);
 
-    if (this.currentTween != undefined) this.currentTween.stop()
-    this.currentTween = new tween.Tween({ scrollTop: el.scrollTop })
-      .to({ scrollTop }, this.scrollAnimationTime)
+    if (this.currentTween != undefined) this.currentTween.stop();
+    let scrollObj = {scrollTop: el.scrollTop};
+
+    this.currentTween = new tween.Tween(scrollObj)
+      .to({scrollTop}, this.scrollAnimationTime)
       .easing(tween.Easing.Quadratic.Out)
       .onUpdate((data) => {
         this.renderer.setProperty(el, 'scrollTop', data.scrollTop);
@@ -217,9 +232,9 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
       })
       .start();
 
-    const animate = (time?) => {
+    const animate = (time?: number) => {
       this.currentTween.update(time);
-      if (this.currentTween._object.scrollTop !== scrollTop) {
+      if (scrollObj.scrollTop !== scrollTop) {
         this.zone.runOutsideAngular(() => {
           requestAnimationFrame(animate);
         });
@@ -229,6 +244,13 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
     animate();
   }
 
+  private getElement(): Element {
+    if (this.parentScroll instanceof Window) {
+      return document.scrollingElement || document.documentElement;
+    }
+    return this.parentScroll || this.element.nativeElement;
+  }
+
   private addParentEventHandlers(parentScroll: Element | Window) {
     this.removeParentEventHandlers();
     if (parentScroll) {
@@ -236,7 +258,7 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
         this.disposeScrollHandler =
           this.renderer.listen(parentScroll, 'scroll', this.refreshHandler);
         if (parentScroll instanceof Window) {
-          this.disposeScrollHandler =
+          this.disposeResizeHandler =
             this.renderer.listen('window', 'resize', this.refreshHandler);
         }
       });
@@ -268,22 +290,28 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
 
   private getElementsOffset(): number {
     let offsetTop = 0;
+    let scrollElement: Element = this.getElement();
+
     if (this.containerElementRef && this.containerElementRef.nativeElement) {
       offsetTop += this.containerElementRef.nativeElement.offsetTop;
     }
     if (this.parentScroll) {
-      offsetTop += this.element.nativeElement.offsetTop;
+      offsetTop += this.element.nativeElement.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top;
+      if (!(this.parentScroll instanceof Window)) {
+        offsetTop += scrollElement.scrollTop;
+      }
     }
     return offsetTop;
   }
 
   private calculateDimensions() {
-    let el: Element = this.parentScroll instanceof Window ? document.body : this.parentScroll || this.element.nativeElement;
+    let el: Element = this.getElement();
     let items = this.items || [];
     let itemCount = items.length;
     let viewWidth = el.clientWidth - this.scrollbarWidth;
     let viewHeight = el.clientHeight - this.scrollbarHeight;
 
+    let sumOfCurrentChildHeight = 0;
     let contentDimensions;
     if (this.childWidth == undefined || this.childHeight == undefined) {
       let content = this.contentElementRef.nativeElement;
@@ -294,6 +322,14 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
         width: viewWidth,
         height: viewHeight
       };
+
+      let i = this.previousStart;
+
+      for (let child of content.children) {
+        this.itemsHeight[i] = child.getBoundingClientRect().height;
+        sumOfCurrentChildHeight += this.itemsHeight[i];
+        i++;
+      }
     }
     let childWidth = this.childWidth || contentDimensions.width;
     let childHeight = this.childHeight || contentDimensions.height;
@@ -301,11 +337,8 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
     let itemsPerRow = Math.max(1, this.countItemsPerRow());
     let itemsPerRowByCalc = Math.max(1, Math.floor(viewWidth / childWidth));
     let itemsPerCol = Math.max(1, Math.floor(viewHeight / childHeight));
-    let elScrollTop = this.parentScroll instanceof Window
-      ? (window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0)
-      : el.scrollTop;
-    let scrollTop = Math.max(0, elScrollTop);
-    const scrollHeight = childHeight * itemCount / itemsPerRow;
+    let scrollTop = Math.max(0, el.scrollTop);
+    const scrollHeight = (childHeight * (itemCount - this.previousEnd) + this.topPadding + sumOfCurrentChildHeight) / itemsPerRow;
     if (itemsPerCol === 1 && Math.floor(scrollTop / scrollHeight * itemCount) + itemsPerRowByCalc >= itemCount) {
       itemsPerRow = itemsPerRowByCalc;
     }
@@ -321,24 +354,23 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
       viewHeight: viewHeight,
       childWidth: childWidth,
       childHeight: childHeight,
+      currentChildHeight: contentDimensions.height,
       itemsPerRow: itemsPerRow,
       itemsPerCol: itemsPerCol,
       itemsPerRowByCalc: itemsPerRowByCalc,
-      scrollHeight,
+      scrollHeight: scrollHeight
     };
   }
 
   private calculateItems() {
     NgZone.assertNotInAngularZone();
-    let el = this.parentScroll instanceof Window ? document.body : this.parentScroll || this.element.nativeElement;
+    let el = this.getElement();
 
     let d = this.calculateDimensions();
 
     let items = this.items || [];
     let offsetTop = this.getElementsOffset();
-    let elScrollTop = this.parentScroll instanceof Window
-      ? (window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0)
-      : el.scrollTop;
+    let elScrollTop = el.scrollTop;
 
     if (elScrollTop > d.scrollHeight) {
       elScrollTop = d.scrollHeight + offsetTop;
@@ -358,7 +390,32 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
       }
     }*/
 
-    let indexByScrollTop = scrollTop / d.scrollHeight * d.itemCount / d.itemsPerRow;
+    let content = this.contentElementRef.nativeElement;
+
+    if (this.containerElementRef && this.containerElementRef.nativeElement) {
+      content = this.containerElementRef.nativeElement;
+    }
+
+    let indexByScrollTop = this.previousStart;
+    let childrenContent = content.children;
+    if (this.topPadding > scrollTop) {
+      // scroll up
+      indexByScrollTop -= (this.topPadding - scrollTop) / d.childHeight;
+    } else {
+      // scroll down
+      let topPaddingCurrent = this.topPadding;
+      for (let child of childrenContent) {
+        let childHeight = child.getBoundingClientRect().height;
+        topPaddingCurrent = topPaddingCurrent + childHeight;
+        if (scrollTop < topPaddingCurrent) {
+          indexByScrollTop += 1 - (topPaddingCurrent - scrollTop) / childHeight;
+          break;
+        } else {
+          indexByScrollTop++;
+        }
+      }
+    }
+
     let end = Math.min(d.itemCount, Math.ceil(indexByScrollTop) * d.itemsPerRow + d.itemsPerRow * (d.itemsPerCol + 1));
 
     let maxStartEnd = end;
@@ -369,13 +426,6 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
     let maxStart = Math.max(0, maxStartEnd - d.itemsPerCol * d.itemsPerRow - d.itemsPerRow);
     let start = Math.min(maxStart, Math.floor(indexByScrollTop) * d.itemsPerRow);
 
-    const topPadding = (items == null || items.length === 0) ? 0 : (d.childHeight * Math.ceil(start / d.itemsPerRow) - (d.childHeight * Math.min(start, this.bufferAmount)));
-
-    if (topPadding !== this.lastTopPadding) {
-      this.renderer.setStyle(this.contentElementRef.nativeElement, 'transform', `translateY(${topPadding}px)`);
-      this.renderer.setStyle(this.contentElementRef.nativeElement, 'webkitTransform', `translateY(${topPadding}px)`);
-      this.lastTopPadding = topPadding;
-    }
 
     start = !isNaN(start) ? start : -1;
     end = !isNaN(end) ? end : -1;
@@ -383,8 +433,38 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
     start = Math.max(0, start);
     end += this.bufferAmount;
     end = Math.min(items.length, end);
-    if (start !== this.previousStart || end !== this.previousEnd) {
 
+    if (start === 0) {
+      this.topPadding = 0;
+      this.previousStart = 0;
+    } else {
+      if (this.previousChildHeight && this.previousScrollNumberElements) {
+        this.topPadding -= childrenContent[this.previousScrollNumberElements - 1].getBoundingClientRect().bottom - childrenContent[0].getBoundingClientRect().top - this.previousChildHeight;
+        this.previousChildHeight = 0;
+        this.previousScrollNumberElements = 0;
+      }
+
+      if (start < this.previousStart) {
+        this.previousChildHeight = 0;
+        for (let i = start; i < this.previousStart; i++) {
+          this.previousChildHeight += this.itemsHeight[i] ? this.itemsHeight[i] : d.childHeight;
+        }
+        this.topPadding -= this.previousChildHeight;
+        this.previousScrollNumberElements = this.previousStart - start;
+      } else {
+        this.topPadding = this.topPadding + (d.currentChildHeight) * (start - this.previousStart);
+      }
+      this.topPadding = Math.round(this.topPadding);
+    }
+
+    if (this.topPadding !== this.lastTopPadding) {
+      this.renderer.setStyle(this.contentElementRef.nativeElement, 'transform', `translateY(${this.topPadding}px)`);
+      this.renderer.setStyle(this.contentElementRef.nativeElement, 'webkitTransform', `translateY(${this.topPadding}px)`);
+      this.lastTopPadding = this.topPadding;
+    }
+    if (start !== this.previousStart || end !== this.previousEnd) {
+      this.previousStart = start;
+      this.previousEnd = end;
       this.zone.run(() => {
         // update the scroll list
         this.viewPortItems = items.slice(start, end);
@@ -392,21 +472,18 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
 
         // emit 'start' event
         if (start !== this.previousStart && this.startupLoop === false) {
-          this.start.emit({ start, end });
+          this.start.emit({start, end});
         }
 
         // emit 'end' event
         if (end !== this.previousEnd && this.startupLoop === false) {
-          this.end.emit({ start, end });
+          this.end.emit({start, end});
         }
 
-        this.previousStart = start;
-        this.previousEnd = end;
-
-        if (this.startupLoop === true) {
+        if (this.startupLoop === true || (this.previousChildHeight && this.previousScrollNumberElements)) {
           this.refresh();
         } else {
-          this.change.emit({ start, end });
+          this.change.emit({start, end});
         }
       });
 
@@ -431,4 +508,5 @@ export class VirtualScrollComponent implements OnInit, OnChanges, OnDestroy {
   exports: [VirtualScrollComponent],
   declarations: [VirtualScrollComponent]
 })
-export class VirtualScrollModule { }
+export class VirtualScrollModule {
+}
