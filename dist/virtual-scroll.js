@@ -233,16 +233,16 @@ var VirtualScrollComponent = (function () {
         }
         var scrollTop = Math.max(0, elScrollTop - offsetTop);
         // Optimization: do not update start and end indexes until scroll reaches the end of list
-        if (this.previousStart !== undefined && this.previousEnd !== undefined) {
-            var A = scrollTop;
-            var B = this.lastTopPadding;
-            var C = this.lastTopPadding + ((this.previousEnd - this.previousStart) * d.childHeight);
-            var D = scrollTop + d.viewHeight;
-            var H = d.childHeight * 1;
-            if (A - B > H && C - D > H) {
-                return;
-            }
-        }
+        // if (this.previousStart !== undefined && this.previousEnd !== undefined) {
+        //   let A = scrollTop;
+        //   let B = this.lastTopPadding;
+        //   let C = this.lastTopPadding + ((this.previousEnd - this.previousStart) * d.childHeight);
+        //   let D = scrollTop + d.viewHeight;
+        //   let H = d.childHeight * 1;
+        //   if (A - B > H && C - D > H) {
+        //     return;
+        //   }
+        // }
         var indexByScrollTop = scrollTop / d.scrollHeight * d.itemCount / d.itemsPerRow;
         var end = Math.min(d.itemCount, Math.ceil(indexByScrollTop) * d.itemsPerRow + d.itemsPerRow * (d.itemsPerCol + 1));
         var maxStartEnd = end;
