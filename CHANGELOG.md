@@ -1,7 +1,3 @@
-# v0.3.3
-
-* Added ability to use virtual scroll with different heights of elements
-
 # v0.3.2
 
 * using actual height of scrollable-content in scrollHeight calculation to fix clipping of last item in case of variable height items
