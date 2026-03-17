@@ -1,0 +1,18 @@
+name: CodeQL Ready for Review Scan
+
+on:
+  pull_request:
+    types: [synchronize, ready_for_review]
+  workflow_dispatch:
+
+jobs:
+  security-sast-scan:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    uses: KeepTruckin/security-scanners/.github/workflows/codeql-rfr-scan.yml@master
+    with:
+      git_repository: ${{ github.repository }}
+      git_branch: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+      git_commit: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      workspace: ${{ github.workspace }}
+    secrets:
+      kt_token: ${{ secrets.kt_token }}
