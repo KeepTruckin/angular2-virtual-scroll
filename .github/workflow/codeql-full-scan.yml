@@ -1,0 +1,16 @@
+name: CodeQL Full Scan
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+
+jobs:
+  security-sast-scan:
+    uses: KeepTruckin/security-scanners/.github/workflows/codeql-fullscan.yml@master
+    with:
+      git_repository: ${{ github.repository }}
+      git_branch: ${{ github.ref_name }}
+      git_commit: ${{ github.sha }}
+      workspace: ${{ github.workspace }}
+    secrets:
+      kt_token: ${{ secrets.kt_token }}
